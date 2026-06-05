@@ -34,11 +34,14 @@ final class SimPanel extends JPanel:
   private var scenarioIdx   = 0
   private var integratorIdx = Integrator.all.indexOf(Leapfrog)
 
+  private var scenario: Scenario    = scala.compiletime.uninitialized
   private var sim: Simulation       = scala.compiletime.uninitialized
   private var scene: Scene          = scala.compiletime.uninitialized
   private var camera: Camera        = scala.compiletime.uninitialized
   private var e0: Double            = 0.0
   private var substeps: Int         = 1
+  private var speedMul: Double      = 1.0
+  private var focusIdx: Int         = -1 // -1 = free (camera targets the origin)
   private var paused                = false
   private var showTrails            = true
 
@@ -53,15 +56,21 @@ final class SimPanel extends JPanel:
 
   private def build(): Unit =
     val sc = scenarios(scenarioIdx)
+    scenario = sc
     val st = sc.state()
     sim = new Simulation(st, sc.gravity(), Integrator.all(integratorIdx), sc.dt)
     scene = new Scene(sc.styles, new Trails(st.n, 240))
     camera = Camera(distance = sc.cameraDistance)
+    focusIdx = -1
+    speedMul = 1.0
     e0 = sim.field match
       case gf: GravityField => Energy.total(st, gf)
       case _                => 0.0
-    // Aim for a roughly constant amount of simulated time per displayed frame.
-    substeps = math.max(1, math.round(0.016 / sc.dt).toInt)
+    updateSubsteps()
+
+  // Sub-steps per frame = the scenario's base count scaled by the live speed.
+  private def updateSubsteps(): Unit =
+    substeps = math.max(1, math.round(scenario.baseSubsteps * speedMul).toInt)
 
   private def currentField: GravityField = sim.field.asInstanceOf[GravityField]
 
@@ -72,6 +81,9 @@ final class SimPanel extends JPanel:
         sim.step()
         i += 1
       scene.trails.record(sim.state.pos)
+    // Keep the camera locked onto the focused body as it moves.
+    if focusIdx >= 0 && focusIdx < sim.state.n then
+      camera = camera.copy(target = sim.state.pos(focusIdx))
     countFps()
     repaint()
 
@@ -102,19 +114,21 @@ final class SimPanel extends JPanel:
     val drift = math.abs((Energy.total(sim.state, currentField) - e0) / e0)
     g2.setColor(new AwtColor(0xdd, 0xdd, 0xee))
     g2.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13))
+    val focusLabel = if focusIdx < 0 then "free" else s"body #$focusIdx"
     val lines = Seq(
       f"scenario : ${scenarios(scenarioIdx).name}",
       f"integrator: ${sim.integrator.name}  —  ${sim.integrator.blurb}",
-      f"|ΔE/E₀|  : $drift%.3e        t = ${sim.time}%.1f        fps = $fps%.0f",
-      if paused then "[PAUSED]" else "",
+      f"|ΔE/E₀|  : $drift%.3e        t = ${sim.time}%.3f        fps = $fps%.0f",
+      f"focus    : $focusLabel        speed = ${speedMul}%.3gx        ${if paused then "[PAUSED]" else ""}",
     )
     var y = 22
     for ln <- lines do
-      if ln.nonEmpty then g2.drawString(ln, 14, y)
+      if ln.trim.nonEmpty then g2.drawString(ln, 14, y)
       y += 18
 
     g2.setColor(new AwtColor(0x88, 0x88, 0x99))
-    val help = "drag: orbit   wheel: zoom   1-5: integrator   n: scenario   t: trails   space: pause   r: reset"
+    val help =
+      "drag: orbit   wheel: zoom   1-5: integrator   n: scenario   f: focus   [ ]: speed   t: trails   space: pause   r: reset"
     g2.drawString(help, 14, getHeight - 14)
 
   // --- input ---------------------------------------------------------------
@@ -144,6 +158,15 @@ final class SimPanel extends JPanel:
         case KeyEvent.VK_N =>
           scenarioIdx = (scenarioIdx + 1) % scenarios.length
           build()
+        case KeyEvent.VK_F =>
+          // Cycle which body the camera tracks; -1 returns to free/origin.
+          focusIdx = if focusIdx + 1 >= sim.state.n then -1 else focusIdx + 1
+          if focusIdx < 0 then camera = camera.copy(target = Vec3.zero, distance = scenario.cameraDistance)
+          else camera = camera.copy(distance = scene.styles(focusIdx).radius * 8.0)
+        case KeyEvent.VK_OPEN_BRACKET =>
+          speedMul = math.max(speedMul * 0.5, 1.0 / 64); updateSubsteps()
+        case KeyEvent.VK_CLOSE_BRACKET =>
+          speedMul = math.min(speedMul * 2.0, 64.0); updateSubsteps()
         case k if k >= KeyEvent.VK_1 && k <= KeyEvent.VK_5 =>
           val idx = k - KeyEvent.VK_1
           if idx < Integrator.all.length then

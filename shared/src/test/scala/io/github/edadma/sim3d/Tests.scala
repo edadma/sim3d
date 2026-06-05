@@ -91,6 +91,25 @@ class Tests extends AnyFreeSpec with Matchers:
     }
   }
 
+  "Scenarios" - {
+    "realistic inner system is centred (zero net momentum) and bound" in {
+      val sc    = Scenarios.solarSystemRealistic
+      val st    = sc.state()
+      val field = sc.gravity()
+      Energy.momentum(st).length shouldBe (0.0 +- 1e-10)
+      Energy.total(st, field) should be < 0.0
+    }
+
+    "Phobos and Deimos stay bound to Mars over many orbits" in {
+      val sc  = Scenarios.marsSystem
+      val st  = sc.state()
+      val sim = new Simulation(st, sc.gravity(), Leapfrog, sc.dt)
+      sim.steps(20000) // ~70 Phobos orbits, ~18 Deimos orbits
+      (st.pos(1) - st.pos(0)).length should be < 5.0e-4 // Phobos near Mars
+      (st.pos(2) - st.pos(0)).length should be < 5.0e-4 // Deimos near Mars
+    }
+  }
+
   "Camera" - {
     "projects a point in front of the eye onto the screen centre" in {
       val proj = Camera(distance = 10.0, yaw = 0.0, pitch = 0.0).projector(800, 600)

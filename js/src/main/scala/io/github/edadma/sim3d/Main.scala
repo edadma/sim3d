@@ -41,22 +41,31 @@ final class HtmlCanvas(ctx: dom.CanvasRenderingContext2D, val width: Double, val
   var scenarioIdx   = 0
   var integratorIdx = Integrator.all.indexOf(Leapfrog)
 
-  var sim: Simulation = null
-  var scene: Scene    = null
-  var camera: Camera  = null
-  var e0              = 0.0
-  var substeps        = 1
-  var paused          = false
-  var showTrails      = true
+  var scenario: Scenario = null
+  var sim: Simulation    = null
+  var scene: Scene       = null
+  var camera: Camera     = null
+  var e0                 = 0.0
+  var substeps           = 1
+  var speedMul           = 1.0
+  var focusIdx           = -1 // -1 = free (camera targets the origin)
+  var paused             = false
+  var showTrails         = true
+
+  def updateSubsteps(): Unit =
+    substeps = math.max(1, math.round(scenario.baseSubsteps * speedMul).toInt)
 
   def build(): Unit =
     val sc = scenarios(scenarioIdx)
+    scenario = sc
     val st = sc.state()
     sim = new Simulation(st, sc.gravity(), Integrator.all(integratorIdx), sc.dt)
     scene = new Scene(sc.styles, new Trails(st.n, 240))
     camera = Camera(distance = sc.cameraDistance)
+    focusIdx = -1
+    speedMul = 1.0
     e0 = Energy.total(st, sc.gravity())
-    substeps = math.max(1, math.round(0.016 / sc.dt).toInt)
+    updateSubsteps()
 
   def resize(): Unit =
     canvasEl.width = window.innerWidth.toInt
@@ -98,6 +107,12 @@ final class HtmlCanvas(ctx: dom.CanvasRenderingContext2D, val width: Double, val
         case "r" | "R"       => build()
         case "t" | "T"       => showTrails = !showTrails
         case "n" | "N"       => scenarioIdx = (scenarioIdx + 1) % scenarios.length; build()
+        case "f" | "F" =>
+          focusIdx = if focusIdx + 1 >= sim.state.n then -1 else focusIdx + 1
+          if focusIdx < 0 then camera = camera.copy(target = Vec3.zero, distance = scenario.cameraDistance)
+          else camera = camera.copy(distance = scene.styles(focusIdx).radius * 8.0)
+        case "[" => speedMul = math.max(speedMul * 0.5, 1.0 / 64); updateSubsteps()
+        case "]" => speedMul = math.min(speedMul * 2.0, 64.0); updateSubsteps()
         case d if d.length == 1 && d(0) >= '1' && d(0) <= '5' =>
           val idx = d(0) - '1'
           if idx < Integrator.all.length then integratorIdx = idx; sim.integrator = Integrator.all(idx)
@@ -108,15 +123,16 @@ final class HtmlCanvas(ctx: dom.CanvasRenderingContext2D, val width: Double, val
 
   def drawHud(): Unit =
     val drift = math.abs((Energy.total(sim.state, sim.field.asInstanceOf[GravityField]) - e0) / e0)
+    val focusLabel = if focusIdx < 0 then "free" else s"body #$focusIdx"
     ctx.font = "13px monospace"
     ctx.fillStyle = "#ddddee"
     ctx.fillText(s"scenario : ${scenarios(scenarioIdx).name}", 14, 22)
     ctx.fillText(s"integrator: ${sim.integrator.name} — ${sim.integrator.blurb}", 14, 40)
-    ctx.fillText(f"|ΔE/E₀| : $drift%.3e    t = ${sim.time}%.1f", 14, 58)
-    if paused then ctx.fillText("[PAUSED]", 14, 76)
+    ctx.fillText(f"|ΔE/E₀| : $drift%.3e    t = ${sim.time}%.3f", 14, 58)
+    ctx.fillText(f"focus: $focusLabel    speed = ${speedMul}%.3gx    ${if paused then "[PAUSED]" else ""}", 14, 76)
     ctx.fillStyle = "#888899"
     ctx.fillText(
-      "drag: orbit   wheel: zoom   1-5: integrator   n: scenario   t: trails   space: pause   r: reset",
+      "drag: orbit   wheel: zoom   1-5: integrator   n: scenario   f: focus   [ ]: speed   t: trails   space: pause   r: reset",
       14,
       window.innerHeight - 14,
     )
@@ -126,6 +142,8 @@ final class HtmlCanvas(ctx: dom.CanvasRenderingContext2D, val width: Double, val
       var i = 0
       while i < substeps do { sim.step(); i += 1 }
       scene.trails.record(sim.state.pos)
+    if focusIdx >= 0 && focusIdx < sim.state.n then
+      camera = camera.copy(target = sim.state.pos(focusIdx))
     val canvas = new HtmlCanvas(ctx, canvasEl.width.toDouble, canvasEl.height.toDouble)
     if showTrails then scene.render(canvas, camera, sim.state.pos)
     else
