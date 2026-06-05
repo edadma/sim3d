@@ -179,17 +179,20 @@ object Scenarios:
     */
   def marsSystem: Scenario =
     val g        = 1.0
-    val marsMass = 3.23e-7
-
+    val marsMass = 1.0
+    // Local units: G = 1, Mars mass = 1, Phobos's orbit = 1. Deimos sits at the
+    // true 2.5x radius ratio, so the realistic ~4:1 period ratio survives while
+    // everything is conveniently order-one (no sub-AU scales to fight the camera
+    // near-plane or floating-point precision).
     def moon(a: Double, m: Double, incl: Double, phase: Double, color: Int, dr: Double): (Body, Style) =
       val (o, d) = orbit(a, phase, incl)
       (Body(m, o, d * math.sqrt(g * marsMass / a)), Style(dr, color))
 
-    val (phobos, phobosStyle) = moon(6.27e-5, 5.4e-15, 0.019, 0.0, 0x9a8c7a, 2.5e-6)
-    val (deimos, deimosStyle) = moon(1.57e-4, 7.5e-16, 0.031, 2.5, 0x8a8276, 2.5e-6)
+    val (phobos, phobosStyle) = moon(1.000, 1.7e-8, 0.019, 0.0, 0x9a8c7a, 0.05)
+    val (deimos, deimosStyle) = moon(2.504, 2.3e-9, 0.031, 2.5, 0x8a8276, 0.05)
 
     val bodies = Vector(Body(marsMass, Vec3.zero, Vec3.zero), phobos, deimos)
-    val styles = Vector(Style(2.0e-5, 0xd9663f), phobosStyle, deimosStyle)
+    val styles = Vector(Style(0.30, 0xd9663f), phobosStyle, deimosStyle)
 
     Scenario(
       "Mars + Phobos & Deimos (close-up)",
@@ -197,9 +200,9 @@ object Scenarios:
       styles,
       g = g,
       softening = 0.0,
-      dt = 2.0e-5,
-      cameraDistance = 6.0e-4,
-      simTimePerFrame = 2.2e-4,
+      dt = 0.01,
+      cameraDistance = 5.0,
+      simTimePerFrame = 0.2,
     )
 
   /** All built-in scenarios, for UI cycling. */

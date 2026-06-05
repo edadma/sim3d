@@ -104,9 +104,9 @@ class Tests extends AnyFreeSpec with Matchers:
       val sc  = Scenarios.marsSystem
       val st  = sc.state()
       val sim = new Simulation(st, sc.gravity(), Leapfrog, sc.dt)
-      sim.steps(20000) // ~70 Phobos orbits, ~18 Deimos orbits
-      (st.pos(1) - st.pos(0)).length should be < 5.0e-4 // Phobos near Mars
-      (st.pos(2) - st.pos(0)).length should be < 5.0e-4 // Deimos near Mars
+      sim.steps(20000) // ~32 Phobos orbits, ~8 Deimos orbits
+      (st.pos(1) - st.pos(0)).length should be < 1.5 // Phobos near Mars (orbit radius 1.0)
+      (st.pos(2) - st.pos(0)).length should be < 3.5 // Deimos near Mars (orbit radius 2.5)
     }
   }
 
