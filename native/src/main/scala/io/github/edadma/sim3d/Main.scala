@@ -26,6 +26,13 @@ object SDL:
   def SDL_PollEvent(event: Ptr[Byte]): CInt                                                 = extern
   def SDL_GetKeyboardState(numkeys: Ptr[CInt]): Ptr[UByte]                                  = extern
   def SDL_GetMouseState(x: Ptr[CInt], y: Ptr[CInt]): UInt                                   = extern
+  def SDL_SetHint(name: CString, value: CString): CInt                                      = extern
+  def SDL_GetWindowPixelFormat(window: Ptr[Byte]): UInt                                     = extern
+  def SDL_CreateTexture(renderer: Ptr[Byte], format: UInt, access: CInt, w: CInt, h: CInt): Ptr[Byte] = extern
+  def SDL_DestroyTexture(texture: Ptr[Byte]): Unit                                          = extern
+  def SDL_SetTextureScaleMode(texture: Ptr[Byte], scaleMode: CInt): CInt                    = extern
+  def SDL_SetRenderTarget(renderer: Ptr[Byte], texture: Ptr[Byte]): CInt                    = extern
+  def SDL_RenderCopy(renderer: Ptr[Byte], texture: Ptr[Byte], srcrect: Ptr[Byte], dstrect: Ptr[Byte]): CInt = extern
 
 /** SDL2_gfx antialiased primitives. The base SDL renderer has no AA; SDL2_gfx's
   * `aaline`/`aacircle` give the smooth edges the Swing and browser backends get
@@ -90,7 +97,17 @@ def runGui(): Unit =
     SDL.SDL_CreateWindow(c"sim3d - native (SDL2)", 0x2fff0000, 0x2fff0000, Width, Height, 0x4.toUInt) // CENTERED, SHOWN
   // SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC paces us to the display.
   val renderer = SDL.SDL_CreateRenderer(window, -1, (0x2 | 0x4).toUInt)
-  val canvas   = new SdlCanvas(renderer, Width.toDouble, Height.toDouble)
+
+  // Antialiasing by supersampling: draw the scene into a 2x off-screen texture,
+  // then let the GPU downscale it with linear filtering (a 2x2 box average per
+  // pixel). SDL's base renderer has no AA, so this is what gives smooth edges.
+  val ss     = 2
+  val texW   = Width * ss
+  val texH   = Height * ss
+  SDL.SDL_SetHint(c"SDL_RENDER_SCALE_QUALITY", c"1") // linear (vs nearest)
+  val target = SDL.SDL_CreateTexture(renderer, SDL.SDL_GetWindowPixelFormat(window), 2, texW, texH) // ACCESS_TARGET
+  SDL.SDL_SetTextureScaleMode(target, 1)             // SDL_ScaleModeLinear
+  val canvas = new SdlCanvas(renderer, texW.toDouble, texH.toDouble)
 
   val scenarios   = Scenarios.all
   var scenarioIdx = 0
@@ -195,9 +212,13 @@ def runGui(): Unit =
       camera = camera.copy(target = sim.state.pos(focusIdx))
 
     val drawScene = if showTrails then scene else new Scene(scene.styles, new Trails(sim.state.n, 0), scene.background)
+    SDL.SDL_SetRenderTarget(renderer, target)        // draw into the hi-res buffer
     drawScene.render(canvas, camera, sim.state.pos)
+    SDL.SDL_SetRenderTarget(renderer, null)          // back to the window
+    SDL.SDL_RenderCopy(renderer, target, null, null) // linear downscale = antialiasing
     SDL.SDL_RenderPresent(renderer)
 
+  SDL.SDL_DestroyTexture(target)
   SDL.SDL_DestroyRenderer(renderer)
   SDL.SDL_DestroyWindow(window)
   SDL.SDL_Quit()
