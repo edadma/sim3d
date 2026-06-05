@@ -1,5 +1,7 @@
 # sim3d
 
+![Maven Central](https://img.shields.io/maven-central/v/io.github.edadma/sim3d_sjs1_3)
+[![Last Commit](https://img.shields.io/github/last-commit/edadma/sim3d)](https://github.com/edadma/sim3d/commits)
 ![GitHub](https://img.shields.io/github/license/edadma/sim3d)
 
 A pluggable, graphics-agnostic 3D physics simulator in cross-platform Scala
