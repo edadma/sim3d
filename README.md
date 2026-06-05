@@ -3,6 +3,9 @@
 ![Maven Central](https://img.shields.io/maven-central/v/io.github.edadma/sim3d_sjs1_3)
 [![Last Commit](https://img.shields.io/github/last-commit/edadma/sim3d)](https://github.com/edadma/sim3d/commits)
 ![GitHub](https://img.shields.io/github/license/edadma/sim3d)
+![Scala Version](https://img.shields.io/badge/Scala-3.8.4-blue.svg)
+![ScalaJS Version](https://img.shields.io/badge/Scala.js-1.21.0-blue.svg)
+![Scala Native Version](https://img.shields.io/badge/Scala_Native-0.5.12-blue.svg)
 
 A pluggable, graphics-agnostic 3D physics simulator in cross-platform Scala
 (JVM / Scala.js / Scala Native). It starts with gravitational N-body dynamics
