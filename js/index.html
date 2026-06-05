@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sim3d — pluggable integrators</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0a0a18; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <!--
+    Build the JS first, then serve this directory (ES modules need http://, not file://):
+      sbt sim3dJS/fastLinkJS
+      (cd js && python3 -m http.server 8080)   # then open http://localhost:8080/
+  -->
+  <script type="module" src="./target/scala-3.8.4/sim3d-fastopt/main.js"></script>
+</body>
+</html>
