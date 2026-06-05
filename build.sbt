@@ -57,6 +57,9 @@ lazy val sim3d = crossProject(JSPlatform, JVMPlatform, NativePlatform)
   )
   .jvmSettings(
     libraryDependencies += "org.scala-js" %% "scalajs-stubs" % "1.1.0" % "provided",
+    // Fork so the Swing GUI runs in its own JVM and the window stays alive
+    // (an unforked `sbt run` exits the JVM as soon as `main` returns).
+    run / fork := true,
   )
   .nativeSettings(
     libraryDependencies += "org.scala-js" %% "scalajs-stubs" % "1.1.0" % "provided",
