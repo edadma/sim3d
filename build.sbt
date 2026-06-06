@@ -63,10 +63,7 @@ lazy val sim3d = crossProject(JSPlatform, JVMPlatform, NativePlatform)
   )
   .nativeSettings(
     libraryDependencies += "org.scala-js" %% "scalajs-stubs" % "1.1.0" % "provided",
-    // `@link("SDL2")` emits -lSDL2; point the linker at Homebrew's copy.
-    nativeConfig ~= { c =>
-      c.withLinkingOptions(c.linkingOptions ++ Seq("-L/opt/homebrew/lib"))
-    },
+    libraryDependencies += "io.github.edadma" %%% "sdl2" % "0.0.1",
   )
   .jsSettings(
     libraryDependencies += "org.scala-js" %%% "scalajs-dom" % "2.8.0",
