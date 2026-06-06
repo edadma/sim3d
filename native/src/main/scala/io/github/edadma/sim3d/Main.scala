@@ -1,28 +1,33 @@
 package io.github.edadma.sim3d
 
-import io.github.edadma.sdl2.*
-import io.github.edadma.sdl2.Color as SdlColor
+import io.github.edadma.sdl3.*
+import io.github.edadma.sdl3.Color as SdlColor
 
-/** SDL2 adapter for the shared [[Canvas]], built on the `io.github.edadma.sdl2`
+/** SDL3 adapter for the shared [[Canvas]], built on the `io.github.edadma.sdl3`
   * binding's pure-Scala layer — no FFI here. As on every platform, only these
   * three primitives are platform-specific; projection, depth sorting, and trails
   * come from [[Scene]].
+  *
+  * SDL3's render API is floating-point, so the SDL2-era 16-bit coordinate
+  * clamping is gone; circles and thick lines are drawn through SDL3's native
+  * `RenderGeometry` fills rather than SDL2_gfx.
   */
 final class SdlCanvas(r: Renderer, val width: Double, val height: Double) extends Canvas:
-  // SDL2_gfx coordinates are 16-bit; clamp so far-off-screen points don't wrap.
-  private def s(v: Double): Int = math.max(-16000.0, math.min(16000.0, v)).toInt
-
   def clear(color: Int): Unit = r.clear(SdlColor.fromRGB(color))
 
   def strokeLine(x1: Double, y1: Double, x2: Double, y2: Double, color: Int, w: Double): Unit =
-    r.aaLine(s(x1), s(y1), s(x2), s(y2), SdlColor.fromRGB(color))
+    // Hairlines (the trails) stay crisp as 1px primitives; honour width only when
+    // a caller asks for a genuinely thick line.
+    if w <= 1.5 then
+      r.setDrawColor(SdlColor.fromRGB(color))
+      r.drawLine(x1, y1, x2, y2)
+    else r.thickLine(x1, y1, x2, y2, w, SdlColor.fromRGB(color))
 
   def fillCircle(cx: Double, cy: Double, radius: Double, color: Int): Unit =
-    val rad = math.max(1.0, math.min(8000.0, radius)).toInt
-    r.fillCircle(s(cx), s(cy), rad, SdlColor.fromRGB(color))
+    r.fillCircle(cx, cy, math.max(1.0, radius), SdlColor.fromRGB(color))
 
-/** The native front-end: an SDL2 window driving the same simulation and renderer
-  * as the Swing and browser apps, via the published `sdl2` binding. State changes
+/** The native front-end: an SDL3 window driving the same simulation and renderer
+  * as the Swing and browser apps, via the published `sdl3` binding. State changes
   * are echoed to stdout since this build has no text overlay.
   */
 def runGui(): Unit =
@@ -34,18 +39,18 @@ def runGui(): Unit =
     System.err.println(s"SDL_Init failed: $error")
     return
 
-  val window = createWindow("sim3d — native (SDL2)", Width, Height)
+  val window = createWindow("sim3d — native (SDL3)", Width, Height)
   if window.isNull then
     System.err.println(s"createWindow failed: $error")
     return
-  val renderer = window.createRenderer() // accelerated + vsync by default
+  val renderer = window.createRenderer()
+  renderer.setVSync(true) // throttle the frame loop to the display refresh
 
   // Antialiasing by supersampling: draw into a 2x off-screen texture, then let
   // the GPU downscale it with linear filtering (a 2x2 box average per pixel).
-  val ss   = 2
-  val texW = Width * ss
-  val texH = Height * ss
-  setHint(HINT_RENDER_SCALE_QUALITY, "1")
+  val ss     = 2
+  val texW   = Width * ss
+  val texH   = Height * ss
   val target = renderer.createTexture(window.pixelFormat, TEXTUREACCESS_TARGET, texW, texH)
   target.setScaleMode(SCALEMODE_LINEAR)
   val canvas = new SdlCanvas(renderer, texW.toDouble, texH.toDouble)
@@ -82,8 +87,8 @@ def runGui(): Unit =
   build()
 
   val prev = new Array[Boolean](512)
-  var prevMouseX = 0
-  var prevMouseY = 0
+  var prevMouseX = 0.0
+  var prevMouseY = 0.0
   var prevDown   = false
   var running    = true
 

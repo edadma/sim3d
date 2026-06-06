@@ -63,7 +63,7 @@ lazy val sim3d = crossProject(JSPlatform, JVMPlatform, NativePlatform)
   )
   .nativeSettings(
     libraryDependencies += "org.scala-js" %% "scalajs-stubs" % "1.1.0" % "provided",
-    libraryDependencies += "io.github.edadma" %%% "sdl2" % "0.0.1",
+    libraryDependencies += "io.github.edadma" %%% "sdl3" % "0.2.0",
   )
   .jsSettings(
     libraryDependencies += "org.scala-js" %%% "scalajs-dom" % "2.8.0",
