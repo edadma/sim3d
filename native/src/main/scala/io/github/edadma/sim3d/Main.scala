@@ -1,30 +1,33 @@
 package io.github.edadma.sim3d
 
-import io.github.edadma.sdl3.*
-import io.github.edadma.sdl3.Color as SdlColor
+import io.github.edadma.sdl3.{Color as _, *}
+import io.github.edadma.libcairo.{Context, Format, imageSurfaceCreate}
 
-/** SDL3 adapter for the shared [[Canvas]], built on the `io.github.edadma.sdl3`
-  * binding's pure-Scala layer — no FFI here. As on every platform, only these
-  * three primitives are platform-specific; projection, depth sorting, and trails
-  * come from [[Scene]].
-  *
-  * SDL3's render API is floating-point, so the SDL2-era 16-bit coordinate
-  * clamping is gone; circles and thick lines are drawn through SDL3's native
-  * `RenderGeometry` fills rather than SDL2_gfx.
+/** Cairo adapter for the shared [[Canvas]]. Cairo is a real 2D vector engine, so each
+  * primitive is anti-aliased by its coverage rasteriser — the native target gets the same
+  * smooth output as the Swing (Java2D) and browser (canvas) backends, with no supersampling.
+  * As on every platform, only these three primitives are platform-specific; projection, depth
+  * sorting, and trails come from [[Scene]]. Colours are packed `0xRRGGBB` integers.
   */
-final class SdlCanvas(r: Renderer, val width: Double, val height: Double) extends Canvas:
-  def clear(color: Int): Unit = r.clear(SdlColor.fromRGB(color))
+final class CairoCanvas(cr: Context, val width: Double, val height: Double) extends Canvas:
+  private def source(color: Int): Unit =
+    cr.setSourceRGBA(Color.r(color) / 255.0, Color.g(color) / 255.0, Color.b(color) / 255.0, 1.0)
+
+  def clear(color: Int): Unit =
+    source(color)
+    cr.paint()
 
   def strokeLine(x1: Double, y1: Double, x2: Double, y2: Double, color: Int, w: Double): Unit =
-    // Hairlines (the trails) stay crisp as 1px primitives; honour width only when
-    // a caller asks for a genuinely thick line.
-    if w <= 1.5 then
-      r.setDrawColor(SdlColor.fromRGB(color))
-      r.drawLine(x1, y1, x2, y2)
-    else r.thickLine(x1, y1, x2, y2, w, SdlColor.fromRGB(color))
+    cr.moveTo(x1, y1)
+    cr.lineTo(x2, y2)
+    cr.setLineWidth(math.max(1.0, w))
+    source(color)
+    cr.stroke()
 
   def fillCircle(cx: Double, cy: Double, radius: Double, color: Int): Unit =
-    r.fillCircle(cx, cy, math.max(1.0, radius), SdlColor.fromRGB(color))
+    cr.arc(cx, cy, math.max(1.0, radius), 0.0, 2 * math.Pi)
+    source(color)
+    cr.fill()
 
 /** The native front-end: an SDL3 window driving the same simulation and renderer
   * as the Swing and browser apps, via the published `sdl3` binding. State changes
@@ -39,21 +42,21 @@ def runGui(): Unit =
     System.err.println(s"SDL_Init failed: $error")
     return
 
-  val window = createWindow("sim3d — native (SDL3)", Width, Height)
+  val window = createWindow("sim3d — native (SDL3 + Cairo)", Width, Height)
   if window.isNull then
     System.err.println(s"createWindow failed: $error")
     return
   val renderer = window.createRenderer()
   renderer.setVSync(true) // throttle the frame loop to the display refresh
 
-  // Antialiasing by supersampling: draw into a 2x off-screen texture, then let
-  // the GPU downscale it with linear filtering (a 2x2 box average per pixel).
-  val ss     = 2
-  val texW   = Width * ss
-  val texH   = Height * ss
-  val target = renderer.createTexture(window.pixelFormat, TEXTUREACCESS_TARGET, texW, texH)
-  target.setScaleMode(SCALEMODE_LINEAR)
-  val canvas = new SdlCanvas(renderer, texW.toDouble, texH.toDouble)
+  // Cairo draws the frame into an in-memory ARGB32 surface — every fill and line
+  // anti-aliased by Cairo's coverage rasteriser, no supersampling. Each frame the surface is
+  // uploaded to a streaming texture and blitted to the window. Cairo's ARGB32 byte layout
+  // matches SDL's ARGB8888 on a little-endian host, so the upload is a straight copy.
+  val surface = imageSurfaceCreate(Format.ARGB32, Width, Height)
+  val cr      = surface.create
+  val texture = renderer.createTexture(PIXELFORMAT_ARGB8888, TEXTUREACCESS_STREAMING, Width, Height)
+  val canvas  = new CairoCanvas(cr, Width.toDouble, Height.toDouble)
 
   val scenarios   = Scenarios.all
   var scenarioIdx = 0
@@ -93,10 +96,13 @@ def runGui(): Unit =
   var running    = true
 
   while running do
-    // Pump the event queue (also refreshes keyboard/mouse state); quit on close.
+    // Pump the event queue (also refreshes keyboard/mouse state); quit on close,
+    // zoom on the mouse wheel (positive y = scroll away = zoom in).
     var e = pollEvent()
     while e.isDefined do
-      if e.get.kind == QUIT then running = false
+      val ev = e.get
+      if ev.kind == QUIT then running = false
+      else if ev.kind == MOUSE_WHEEL && ev.wheelY != 0.0 then camera = camera.zoom(math.pow(1.1, -ev.wheelY))
       e = pollEvent()
 
     val keys                   = Keyboard.state
@@ -128,8 +134,8 @@ def runGui(): Unit =
           println(s"integrator: ${sim.integrator.name} — ${sim.integrator.blurb}")
       k += 1
 
-    // Held zoom keys (mouse-wheel parsing not needed with the binding's events,
-    // but keys keep parity with the other front-ends).
+    // Held zoom keys, in parity with the other front-ends (the mouse wheel,
+    // handled above, is the quicker way).
     if down(Scancode.Minus) then camera = camera.zoom(1.04)
     if down(Scancode.Equals) then camera = camera.zoom(1.0 / 1.04)
 
@@ -155,13 +161,15 @@ def runGui(): Unit =
       camera = camera.copy(target = sim.state.pos(focusIdx))
 
     val drawScene = if showTrails then scene else new Scene(scene.styles, new Trails(sim.state.n, 0), scene.background)
-    renderer.setTarget(target)        // draw into the hi-res buffer
-    drawScene.render(canvas, camera, sim.state.pos)
-    renderer.resetTarget()            // back to the window
-    renderer.copy(target)             // linear downscale = antialiasing
+    drawScene.render(canvas, camera, sim.state.pos) // Cairo draws (and clears) the surface
+    surface.flush()
+    texture.update(surface.getData, surface.getStride)
+    renderer.copy(texture)
     renderer.present()
 
-  target.destroy()
+  cr.destroy()
+  surface.destroy()
+  texture.destroy()
   renderer.destroy()
   window.destroy()
   quit()

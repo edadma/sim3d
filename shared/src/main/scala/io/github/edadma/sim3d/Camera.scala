@@ -32,20 +32,33 @@ final case class Camera(
   def projector(width: Double, height: Double): Projector =
     val e   = eye
     val fwd = (target - e).normalized
-    // Guard the degenerate case of looking straight up/down the world-up axis.
-    val seedRight = fwd.cross(Vec3(0.0, 1.0, 0.0))
-    val right     = (if seedRight.lengthSq < 1e-9 then Vec3(1.0, 0.0, 0.0) else seedRight).normalized
-    val up        = right.cross(fwd)
-    val focal     = (height / 2.0) / math.tan(fov / 2.0)
+    // The up-vector is the tangent of the orbit in the pitch direction. It is
+    // always unit length and perpendicular to the view direction — even looking
+    // straight up or down — so the basis never collapses and the camera can roll
+    // continuously over the poles. (In the range a fixed world-up handles, this
+    // is the identical basis.)
+    val up    = Vec3(-math.sin(pitch) * math.cos(yaw), math.cos(pitch), -math.sin(pitch) * math.sin(yaw))
+    val right = fwd.cross(up).normalized
+    val focal = (height / 2.0) / math.tan(fov / 2.0)
     new Projector(e, right, up, fwd, width, height, focal)
 
-  // Clamp pitch just shy of the poles so the up-vector never collapses.
+  /** Orbit by the given yaw/pitch deltas. Both angles wrap, so the camera rolls
+    * over the poles and turns all the way around rather than stopping. */
   def orbit(dYaw: Double, dPitch: Double): Camera =
-    val lim = math.Pi / 2.0 - 1e-3
-    copy(yaw = yaw + dYaw, pitch = math.max(-lim, math.min(lim, pitch + dPitch)))
+    copy(yaw = Camera.wrapAngle(yaw + dYaw), pitch = Camera.wrapAngle(pitch + dPitch))
 
   def zoom(factor: Double): Camera =
     copy(distance = math.max(0.05, distance * factor))
+
+object Camera:
+  /** Normalise an angle into `(-pi, pi]` so orbit angles roll over instead of
+    * growing without bound across a long drag. */
+  def wrapAngle(a: Double): Double =
+    val twoPi = 2.0 * math.Pi
+    val m     = a % twoPi
+    if m > math.Pi then m - twoPi
+    else if m <= -math.Pi then m + twoPi
+    else m
 
 /** Precomputed view transform: eye, orthonormal basis, focal length. Projecting
   * is then a couple of dot products per point.

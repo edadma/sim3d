@@ -120,4 +120,24 @@ class Tests extends AnyFreeSpec with Matchers:
           p.depth shouldBe (10.0 +- 1e-6)
         case None => fail("origin should be visible")
     }
+
+    "orbit rolls over the poles instead of clamping" in {
+      val c = Camera(pitch = 0.4)
+      // Past the north pole is allowed — no clamp near pi/2.
+      c.orbit(0.0, 1.4).pitch shouldBe (1.8 +- 1e-9)
+      // A full turn in either angle wraps back to the start.
+      c.orbit(0.0, 2.0 * math.Pi).pitch shouldBe (0.4 +- 1e-9)
+      c.orbit(2.0 * math.Pi, 0.0).yaw shouldBe (c.yaw +- 1e-9)
+      // Angles stay bounded in (-pi, pi].
+      Camera.wrapAngle(10.0) should (be > -math.Pi and be <= math.Pi)
+    }
+
+    "projector stays well-defined looking straight down (pitch = pi/2)" in {
+      val proj = Camera(target = Vec3.zero, distance = 10.0, yaw = 0.0, pitch = math.Pi / 2.0).projector(800, 600)
+      proj.project(Vec3(1.0, 0.0, 0.0)) match
+        case Some(p) =>
+          p.x.isNaN shouldBe false
+          p.y.isNaN shouldBe false
+        case None => fail("an offset point should be visible from straight above")
+    }
   }
