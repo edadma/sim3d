@@ -63,11 +63,11 @@ lazy val sim3d = crossProject(JSPlatform, JVMPlatform, NativePlatform)
   )
   .nativeSettings(
     libraryDependencies += "org.scala-js" %% "scalajs-stubs" % "1.1.0" % "provided",
-    // SDL3 is the platform layer (window, input, present, texture upload); Cairo is the
-    // drawing engine — anti-aliased fills/lines with no supersampling. scala-native finds the
-    // Homebrew-installed libSDL3 / libcairo via each binding's `@link`.
-    libraryDependencies += "io.github.edadma" %%% "sdl3" % "0.2.2",
-    libraryDependencies += "io.github.edadma" %%% "libcairo" % "0.0.4",
+    // The native front-end is a suit application: the simulation animates inside a suit canvas
+    // widget while the rest of the window is an ordinary suit UI. suit is the toolkit — it owns
+    // the SDL3 window/input/present loop and draws through Cairo — so it pulls SDL3 and Cairo (and
+    // its other native libs) in transitively; this build no longer depends on them directly.
+    libraryDependencies += "io.github.edadma" %%% "suit" % "0.0.2",
   )
   .jsSettings(
     libraryDependencies += "org.scala-js" %%% "scalajs-dom" % "2.8.0",
